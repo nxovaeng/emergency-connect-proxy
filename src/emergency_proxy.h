@@ -6,6 +6,7 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include "wsnet/WSNet.h"
 
 struct EmergencyEndpoint {
     std::string ip;
@@ -28,6 +29,7 @@ struct ProxyConfig {
     int openvpnRetries = 3;
     
     // 端点配置
+    bool autoFetchEndpoints = true;
     std::vector<EmergencyEndpoint> endpoints;
     
     // 日志配置
@@ -42,6 +44,12 @@ public:
     
     // 初始化配置
     bool initialize(const ProxyConfig &config);
+    
+    // 自动获取远程端点信息 (模拟 Windscribe Emergency Connection Attempt Strategy)
+    bool fetchRemoteEndpoints(bool async = false, std::function<void(bool success)> onComplete = nullptr);
+    
+    // 获取当前配置的端点列表
+    const std::vector<EmergencyEndpoint>& getEndpoints() const;
     
     // 启动代理
     bool start();
@@ -66,7 +74,6 @@ private:
     
     class OpenVPNTunnel* vpnTunnel_ = nullptr;
     class ProxyServer* proxyServer_ = nullptr;
-    class SystemProxy* sysProxy_ = nullptr;
     
     LogCallback logCallback_;
     std::thread proxyThread_;
@@ -75,6 +82,5 @@ private:
     
     bool setupVPN();
     bool setupProxy();
-    bool setupSystemProxy();
     bool cleanup();
 };

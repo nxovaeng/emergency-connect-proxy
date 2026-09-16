@@ -4,6 +4,7 @@
 #include <vector>
 #include <functional>
 #include <memory>
+#include <cstdint>
 
 class OpenVPNTunnel {
 public:

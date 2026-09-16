@@ -3,6 +3,7 @@
 #include <cstring>
 #include "emergency_proxy.h"
 #include "utils/logger.h"
+#include "wsnet/WSNet.h"
 
 void printUsage(const char *programName) {
     std::cout << "Emergency Connect Proxy for Windscribe" << std::endl;
@@ -13,6 +14,8 @@ void printUsage(const char *programName) {
     std::cout << "  --start, -s              Start the proxy" << std::endl;
     std::cout << "  --stop, -S               Stop the proxy" << std::endl;
     std::cout << "  --status                 Check proxy status" << std::endl;
+    std::cout << "  --fetch-endpoints        Fetch and list remote emergency endpoints via wsnet" << std::endl;
+    std::cout << "  --no-auto-fetch          Disable automatic remote endpoint resolution" << std::endl;
     std::cout << "  --port PORT, -p PORT     Proxy port (default: 8888)" << std::endl;
     std::cout << "  --bind ADDR              Bind address (default: 127.0.0.1)" << std::endl;
     std::cout << "  --config FILE, -c FILE   Configuration file" << std::endl;
@@ -26,6 +29,8 @@ int main(int argc, char *argv[]) {
     bool startProxy = false;
     bool stopProxy = false;
     bool checkStatus = false;
+    bool fetchEndpointsOnly = false;
+    bool autoFetch = true;
     std::string proxyPort = "8888";
     std::string bindAddr = "127.0.0.1";
     std::string configFile;
@@ -44,6 +49,12 @@ int main(int argc, char *argv[]) {
         }
         else if (arg == "--status") {
             checkStatus = true;
+        }
+        else if (arg == "--fetch-endpoints") {
+            fetchEndpointsOnly = true;
+        }
+        else if (arg == "--no-auto-fetch") {
+            autoFetch = false;
         }
         else if (arg == "--port" || arg == "-p") {
             if (i + 1 < argc) {
@@ -83,6 +94,25 @@ int main(int argc, char *argv[]) {
     // 初始化日志
     Logger::instance().init(logFile, logLevel);
     
+    // 初始化 WSNet 子系统
+    WSNet::instance()->initialize();
+
+    // 独立查询/拉取端点信息命令
+    if (fetchEndpointsOnly) {
+        std::cout << "Fetching emergency connect endpoints via wsnet::emergencyConnect()..." << std::endl;
+        wsnet::emergencyConnect()->getIpEndpoints([](const std::vector<std::shared_ptr<wsnet::WSNetEmergencyConnectEndpoint>> &endpoints) {
+            std::cout << "Successfully retrieved " << endpoints.size() << " emergency endpoint(s):" << std::endl;
+            for (size_t i = 0; i < endpoints.size(); ++i) {
+                std::cout << "  [" << (i + 1) << "] " << endpoints[i]->ip() << ":"
+                          << endpoints[i]->port() << " ("
+                          << (endpoints[i]->protocol() == wsnet::Protocol::kTcp ? "TCP" : "UDP")
+                          << ")" << std::endl;
+            }
+        });
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        return 0;
+    }
+    
     // 创建代理实例
     EmergencyConnectProxy proxy;
     
@@ -103,6 +133,7 @@ int main(int argc, char *argv[]) {
     ProxyConfig config;
     config.proxyPort = std::stoi(proxyPort);
     config.bindAddress = bindAddr;
+    config.autoFetchEndpoints = autoFetch;
     config.logLevel = logLevel;
     config.logFile = logFile;
     

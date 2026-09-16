@@ -4,7 +4,9 @@
 
 ## 🎯 功能特性
 
-- ✅ 基于 Windscribe 紧急连接技术
+- ✅ 基于 Windscribe 紧急连接技术与 WSNet 网络子系统
+- ✅ 支持 `WSNet::instance()->initialize()` 及 `wsnet::emergencyConnect()->getIpEndpoints(callback)`
+- ✅ 自动获取与解析远端端点信息 (模拟 Windscribe Desktop App 尝试策略)
 - ✅ 建立 OpenVPN 隧道代理
 - ✅ 无 Qt 依赖，纯 C++ 实现
 - ✅ 跨平台支持 (Windows/macOS/Linux)
@@ -73,6 +75,12 @@ emergency-proxy.exe --stop
 ```bash
 # 启动代理
 ./emergency-proxy --start [--port 8888] [--bind 127.0.0.1]
+
+# 独立拉取并查看远端紧急端点列表 (通过 wsnet)
+./emergency-proxy --fetch-endpoints
+
+# 运行单元测试
+make test
 
 # 停止代理
 ./emergency-proxy --stop
