@@ -1,0 +1,33 @@
+# Build directories
+build/
+dist/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# CMake
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+
+# Executables
+emergency-proxy
+emergency-proxy.exe
+
+# Logs
+*.log
+
+# Temporary files
+/tmp/
+*.tmp
