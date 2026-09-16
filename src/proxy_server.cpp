@@ -165,13 +165,14 @@ int ProxyServer::connectToRemote(const std::string &host, uint16_t port) {
         return -1;
     }
 
+#ifdef _WIN32
+    DWORD timeoutMs = 6000;
+    setsockopt(remoteSock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeoutMs), sizeof(timeoutMs));
+    setsockopt(remoteSock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&timeoutMs), sizeof(timeoutMs));
+#else
     struct timeval tv;
     tv.tv_sec = 6;
     tv.tv_usec = 0;
-#ifdef _WIN32
-    setsockopt(remoteSock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
-    setsockopt(remoteSock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
-#else
     setsockopt(remoteSock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(remoteSock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif

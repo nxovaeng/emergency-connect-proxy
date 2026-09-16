@@ -3,6 +3,8 @@
 #include <cstring>
 #include <csignal>
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include "emergency_proxy.h"
 #include "utils/logger.h"
 #include "wsnet/WSNet.h"

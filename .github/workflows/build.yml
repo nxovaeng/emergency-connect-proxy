@@ -1,0 +1,228 @@
+name: Build and Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Type (Release or Debug)'
+        required: true
+        default: 'Release'
+        type: choice
+        options:
+          - Release
+          - Debug
+      create_release:
+        description: 'Publish as GitHub Release'
+        required: false
+        type: boolean
+        default: false
+      release_tag:
+        description: 'Release Tag (e.g. v1.0.0, required if Publish as GitHub Release is checked)'
+        required: false
+        type: string
+        default: ''
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 1. Linux x86-64
+          - name: 'Linux x86-64'
+            os: ubuntu-latest
+            target: linux-x86_64
+            is_windows: false
+            is_cross: false
+            enable_tests: true
+
+          # 2. Linux ARM64 (交叉编译)
+          - name: 'Linux ARM64'
+            os: ubuntu-latest
+            target: linux-arm64
+            is_windows: false
+            is_cross: true
+            enable_tests: false
+
+          # 3. Windows x86-64
+          - name: 'Windows x86-64'
+            os: windows-latest
+            target: windows-x86_64
+            is_windows: true
+            cmake_arch: 'x64'
+            enable_tests: true
+
+          # 4. Windows ARM64 (MSVC 交叉编译)
+          - name: 'Windows ARM64'
+            os: windows-latest
+            target: windows-arm64
+            is_windows: true
+            cmake_arch: 'ARM64'
+            enable_tests: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Linux ARM64 交叉编译工具链
+      - name: Install ARM64 Toolchain (Linux ARM64)
+        if: matrix.target == 'linux-arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      # Linux x86_64 CMake 配置
+      - name: Configure CMake (Linux x86_64)
+        if: matrix.target == 'linux-x86_64'
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type || 'Release' }} \
+            -DENABLE_TESTS=ON
+
+      # Linux ARM64 交叉编译 CMake 配置
+      - name: Configure CMake (Linux ARM64)
+        if: matrix.target == 'linux-arm64'
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type || 'Release' }} \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DENABLE_TESTS=OFF
+
+      # Linux 构建
+      - name: Build (Linux)
+        if: "!matrix.is_windows"
+        run: cmake --build build --config ${{ inputs.build_type || 'Release' }} -j$(nproc)
+
+      # 原生 Linux 运行单元测试
+      - name: Run Unit Tests (Linux x86_64)
+        if: matrix.target == 'linux-x86_64'
+        run: ctest --test-dir build --output-on-failure
+
+      # Linux 打包 (.tar.gz)
+      - name: Package (Linux)
+        if: "!matrix.is_windows"
+        run: |
+          PACKAGE_NAME="emergency-proxy-${{ matrix.target }}"
+          STAGE_DIR="dist/${PACKAGE_NAME}"
+          mkdir -p "${STAGE_DIR}"
+          cp build/emergency-proxy "${STAGE_DIR}/"
+          cp -r config scripts README.md LICENSE "${STAGE_DIR}/"
+          chmod +x "${STAGE_DIR}/emergency-proxy" "${STAGE_DIR}/scripts/"*.sh 2>/dev/null || true
+          tar -czvf "${PACKAGE_NAME}.tar.gz" -C dist "${PACKAGE_NAME}"
+          sha256sum "${PACKAGE_NAME}.tar.gz" > "${PACKAGE_NAME}.tar.gz.sha256"
+
+      # Windows CMake 配置
+      - name: Configure CMake (Windows)
+        if: matrix.is_windows
+        shell: pwsh
+        run: |
+          $testFlag = if ("${{ matrix.enable_tests }}" -eq "true") { "-DENABLE_TESTS=ON" } else { "-DENABLE_TESTS=OFF" }
+          cmake -B build -A ${{ matrix.cmake_arch }} -DCMAKE_BUILD_TYPE=${{ inputs.build_type || 'Release' }} $testFlag
+
+      # Windows 构建
+      - name: Build (Windows)
+        if: matrix.is_windows
+        run: cmake --build build --config ${{ inputs.build_type || 'Release' }}
+
+      # 原生 Windows x86_64 运行单元测试
+      - name: Run Unit Tests (Windows x86_64)
+        if: matrix.target == 'windows-x86_64'
+        run: ctest --test-dir build -C ${{ inputs.build_type || 'Release' }} --output-on-failure
+
+      # Windows 打包 (.zip)
+      - name: Package (Windows)
+        if: matrix.is_windows
+        shell: pwsh
+        run: |
+          $buildType = "${{ inputs.build_type || 'Release' }}"
+          $packageName = "emergency-proxy-${{ matrix.target }}"
+          $stageDir = "dist/$packageName"
+          New-Item -ItemType Directory -Force -Path $stageDir
+          
+          # 拷贝编译出的可执行文件
+          if (Test-Path "build/$buildType/emergency-proxy.exe") {
+            Copy-Item "build/$buildType/emergency-proxy.exe" "$stageDir/"
+          } elseif (Test-Path "build/emergency-proxy.exe") {
+            Copy-Item "build/emergency-proxy.exe" "$stageDir/"
+          } else {
+            throw "emergency-proxy.exe not found in build directory!"
+          }
+          
+          Copy-Item -Recurse config "$stageDir/"
+          Copy-Item README.md, LICENSE "$stageDir/"
+          
+          Compress-Archive -Path "$stageDir" -DestinationPath "${packageName}.zip" -Force
+          $hash = (Get-FileHash -Path "${packageName}.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  ${packageName}.zip" | Out-File -FilePath "${packageName}.zip.sha256" -Encoding ascii
+
+      # 上传构建产物至 Actions Artifacts
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: emergency-proxy-${{ matrix.target }}
+          path: |
+            emergency-proxy-${{ matrix.target }}.tar.gz
+            emergency-proxy-${{ matrix.target }}.tar.gz.sha256
+            emergency-proxy-${{ matrix.target }}.zip
+            emergency-proxy-${{ matrix.target }}.zip.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Prepare Release Assets
+        run: |
+          cd release-artifacts
+          cat *.sha256 > SHA256SUMS.txt || true
+          echo "Ready to release the following assets:"
+          ls -lh
+
+      - name: Determine Release Tag
+        id: get_tag
+        run: |
+          if [ -n "${{ inputs.release_tag }}" ]; then
+            echo "tag=${{ inputs.release_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ steps.get_tag.outputs.tag }}
+          name: Release ${{ steps.get_tag.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            release-artifacts/*.tar.gz
+            release-artifacts/*.zip
+            release-artifacts/*.sha256
+            release-artifacts/SHA256SUMS.txt
+

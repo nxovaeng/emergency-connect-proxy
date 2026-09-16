@@ -60,7 +60,13 @@ bool OpenVPNTunnel::disconnect() {
     processPid_ = -1;
     connected_ = false;
 
-#ifndef _WIN32
+#ifdef _WIN32
+    char tempDir[MAX_PATH];
+    if (GetTempPathA(MAX_PATH, tempDir) > 0) {
+        DeleteFileA((std::string(tempDir) + "emergency_ovpn_temp.conf").c_str());
+        DeleteFileA((std::string(tempDir) + "emergency_ovpn_auth.txt").c_str());
+    }
+#else
     unlink("/tmp/emergency_ovpn_temp.conf");
     unlink("/tmp/emergency_ovpn_auth.txt");
 #endif
@@ -171,7 +177,13 @@ void OpenVPNTunnel::setStatusCallback(StatusCallback callback) {
 }
 
 std::string OpenVPNTunnel::generateTempConfigFile(const std::string &ip, uint16_t port, const std::string &protocol) {
+#ifdef _WIN32
+    char tempDir[MAX_PATH];
+    GetTempPathA(MAX_PATH, tempDir);
+    std::string tempPath = std::string(tempDir) + "emergency_ovpn_temp.conf";
+#else
     std::string tempPath = "/tmp/emergency_ovpn_temp.conf";
+#endif
     std::ofstream out(tempPath);
     if (!configPath_.empty()) {
         std::ifstream in(configPath_);
@@ -190,7 +202,13 @@ std::string OpenVPNTunnel::generateTempConfigFile(const std::string &ip, uint16_
 
 bool OpenVPNTunnel::startOpenVPNProcess(const std::string &configFile) {
     // 启动 OpenVPN 进程
+#ifdef _WIN32
+    char tempDir[MAX_PATH];
+    GetTempPathA(MAX_PATH, tempDir);
+    std::string authFile = std::string(tempDir) + "emergency_ovpn_auth.txt";
+#else
     std::string authFile = "/tmp/emergency_ovpn_auth.txt";
+#endif
     std::ofstream auth(authFile);
     if (!username_.empty()) {
         auth << username_ << "\n" << password_ << "\n";

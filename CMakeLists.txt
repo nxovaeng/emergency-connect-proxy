@@ -62,12 +62,14 @@ elseif(APPLE)
     target_link_libraries(emergency-proxy PRIVATE pthread)
 elseif(WIN32)
     # Windows
-    target_link_libraries(emergency-proxy PRIVATE ws2_32 winsock2 iphlpapi)
+    target_compile_definitions(emergency-proxy PRIVATE WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS _WINSOCK_DEPRECATED_NO_WARNINGS)
+    target_link_libraries(emergency-proxy PRIVATE ws2_32 iphlpapi)
 endif()
 
 # 编译选项
 if(MSVC)
-    target_compile_options(emergency-proxy PRIVATE /W4)
+    target_compile_definitions(emergency-proxy PRIVATE _CRT_SECURE_NO_WARNINGS _WINSOCK_DEPRECATED_NO_WARNINGS)
+    target_compile_options(emergency-proxy PRIVATE /W4 /wd4996)
 else()
     target_compile_options(emergency-proxy PRIVATE -Wall -Wextra -Wpedantic)
 endif()

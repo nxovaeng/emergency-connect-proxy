@@ -67,6 +67,22 @@ emergency-proxy.exe --start --port 8888
 emergency-proxy.exe --stop
 ```
 
+### 🤖 GitHub 自动构建与跨平台矩阵
+
+本项目支持 GitHub Actions 自动交叉编译与打包，支持手动一键触发（`workflow_dispatch`）或推送标签触发：
+
+| 平台 | 架构 | 构建工具链 | 输出包格式 |
+| :--- | :--- | :--- | :--- |
+| **Linux** | `x86_64` (amd64) | GCC / CMake (原生) | `.tar.gz` |
+| **Linux** | `arm64` (aarch64) | GCC aarch64 交叉编译 | `.tar.gz` |
+| **Windows** | `x86_64` (x64) | MSVC / CMake (原生) | `.zip` |
+| **Windows** | `arm64` (ARM64) | MSVC ARM64 交叉编译 | `.zip` |
+
+**手动触发方式**：
+1. 打开 GitHub 仓库页面，点击 **Actions** 标签页；
+2. 在左侧选择 **Build and Package** 工作流；
+3. 点击右侧 **Run workflow** 下拉菜单，选择构建分支、类型（`Release`/`Debug`），即可一键构建 4 种架构的二进制产物并生成 SHA256 校验和。
+
 ## 📖 命令行用法
 
 ```bash

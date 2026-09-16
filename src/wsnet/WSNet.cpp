@@ -3,6 +3,11 @@
 #include "../utils/logger.h"
 #include <mutex>
 
+#ifdef _WIN32
+    #include <winsock2.h>
+    #pragma comment(lib, "ws2_32.lib")
+#endif
+
 namespace wsnet {
 
 static std::shared_ptr<WSNet> s_wsnetInstance = nullptr;
@@ -20,6 +25,11 @@ bool WSNet::initialize() {
     if (initialized_) {
         return true;
     }
+
+#ifdef _WIN32
+    WSADATA wsaData;
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
+#endif
 
     emergencyConnect_ = std::make_shared<EmergencyConnectImpl>();
     initialized_ = true;
@@ -57,6 +67,9 @@ void WSNet::cleanup() {
         s_wsnetInstance->emergencyConnect_.reset();
         s_wsnetInstance->initialized_ = false;
         s_wsnetInstance.reset();
+#ifdef _WIN32
+        WSACleanup();
+#endif
         Logger::instance().info("[wsnet] WSNet subsystem cleaned up.");
     }
 }
