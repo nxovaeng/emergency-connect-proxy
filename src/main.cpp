@@ -1,9 +1,18 @@
 #include <iostream>
 #include <string>
 #include <cstring>
+#include <csignal>
+#include <atomic>
 #include "emergency_proxy.h"
 #include "utils/logger.h"
 #include "wsnet/WSNet.h"
+
+static std::atomic<bool> g_running{true};
+
+static void handleSignal(int signum) {
+    (void)signum;
+    g_running = false;
+}
 
 void printUsage(const char *programName) {
     std::cout << "Emergency Connect Proxy for Windscribe" << std::endl;
@@ -144,15 +153,21 @@ int main(int argc, char *argv[]) {
     
     // 处理命令
     if (startProxy) {
+        std::signal(SIGINT, handleSignal);
+        std::signal(SIGTERM, handleSignal);
+
         std::cout << "Starting proxy..." << std::endl;
         if (proxy.start()) {
             std::cout << "Proxy started on " << proxy.getProxyUrl() << std::endl;
             std::cout << "Press Ctrl+C to stop..." << std::endl;
             
-            // 保持运行
-            while (true) {
-                std::this_thread::sleep_for(std::chrono::seconds(1));
+            // 保持运行直到收到信号
+            while (g_running) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
             }
+            std::cout << "\nStopping proxy gracefully..." << std::endl;
+            proxy.stop();
+            std::cout << "Proxy stopped." << std::endl;
         } else {
             std::cerr << "Failed to start proxy" << std::endl;
             return 1;

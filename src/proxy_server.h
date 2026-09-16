@@ -4,6 +4,7 @@
 #include <memory>
 #include <thread>
 #include <atomic>
+#include <cstdint>
 
 class ProxyServer {
 public:
@@ -40,4 +41,7 @@ private:
     bool setupServer();
     void acceptConnections();
     void handleClientConnection(int clientSocket);
+    int connectToRemote(const std::string &host, uint16_t port);
+    void pipeSockets(int sock1, int sock2);
+    void closeSocket(int sock);
 };

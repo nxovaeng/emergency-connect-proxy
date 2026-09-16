@@ -5,21 +5,18 @@
 ## 🎯 功能特性
 
 - ✅ 基于 Windscribe 紧急连接技术与 WSNet 网络子系统
-- ✅ 支持 `WSNet::instance()->initialize()` 及 `wsnet::emergencyConnect()->getIpEndpoints(callback)`
 - ✅ 自动获取与解析远端端点信息 (模拟 Windscribe Desktop App 尝试策略)
 - ✅ 建立 OpenVPN 隧道代理
-- ✅ 无 Qt 依赖，纯 C++ 实现
 - ✅ 跨平台支持 (Windows/macOS/Linux)
 - ✅ HTTP 和 SOCKS5 协议支持
 - ✅ 自动端点故障转移
-- ✅ 系统代理自动配置 (可选)
+
 
 ## 📋 使用场景
 
 当你在某些限制网络环境中：
 1. Windscribe 账户触发速率限制 (rate limited)
 2. 无法直接登录客户端
-3. 浏览器插件和官网登录是独立的认证系统
 
 **解决方案：**
 1. 启动此代理工具 → 建立紧急 VPN 隧道
@@ -95,6 +92,20 @@ make test
 ./emergency-proxy --help
 ```
 
+### 🔒 Linux 网络命名空间隔离运行（推荐）
+
+通过 Linux Network Namespace 可以实现 **零路由污染、零网卡侵入**：
+OpenVPN 的 `tun0` 网卡及默认路由被严格隔离在独立的网络空间中，宿主机完全不受影响，只需通过本地虚拟端口连接代理：
+
+```bash
+# 一键隔离运行（自动配置 veth、NAT 与 DNS，退出时自动清理）
+sudo ./scripts/run_in_netns.sh
+
+# 宿主机使用代理访问 Windscribe API：
+curl -x http://10.200.1.2:8888 https://api.windscribe.com/Session
+```
+
+
 ## ⚙️ 配置文件
 
 编辑 `config/default.conf`:
@@ -153,7 +164,6 @@ emergency-connect-proxy/
 │   ├── emergency_proxy.h/cpp       # 代理核心
 │   ├── openvpn_tunnel.h/cpp        # OpenVPN 隧道
 │   ├── proxy_server.h/cpp          # HTTP/SOCKS5 代理服务器
-│   ├── system_proxy.h/cpp          # 系统代理配置
 │   └── utils/
 │       ├── config.h/cpp            # 配置文件解析
 │       ├── logger.h/cpp            # 日志系统

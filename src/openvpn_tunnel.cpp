@@ -56,11 +56,15 @@ bool OpenVPNTunnel::disconnect() {
         return true;
     }
     
-    if (!stopOpenVPNProcess()) {
-        return false;
-    }
-    
+    stopOpenVPNProcess();
+    processPid_ = -1;
     connected_ = false;
+
+#ifndef _WIN32
+    unlink("/tmp/emergency_ovpn_temp.conf");
+    unlink("/tmp/emergency_ovpn_auth.txt");
+#endif
+
     if (statusCallback_) {
         statusCallback_("Disconnected");
     }
