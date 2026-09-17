@@ -48,15 +48,27 @@ void ProxyServer::closeSocket(int sock) {
 }
 
 bool ProxyServer::stop() {
+    if (!running_) {
+        return true;
+    }
+
     running_ = false;
+    
+    if (serverSocket_ != -1) {
+#ifdef _WIN32
+        shutdown(serverSocket_, SD_BOTH);
+#else
+        shutdown(serverSocket_, SHUT_RDWR);
+#endif
+    }
+
+    if (acceptThread_.joinable()) {
+        acceptThread_.join();
+    }
     
     if (serverSocket_ != -1) {
         closeSocket(serverSocket_);
         serverSocket_ = -1;
-    }
-    
-    if (acceptThread_.joinable()) {
-        acceptThread_.join();
     }
     
     return true;
@@ -129,17 +141,29 @@ bool ProxyServer::setupServer() {
 
 void ProxyServer::acceptConnections() {
     while (running_) {
+        if (serverSocket_ < 0) {
+            break;
+        }
+
+        fd_set readFds;
+        FD_ZERO(&readFds);
+        FD_SET(serverSocket_, &readFds);
+
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 200000; // 200ms 周期唤醒检测 running_
+
+        int ret = select(serverSocket_ + 1, &readFds, nullptr, nullptr, &tv);
+        if (ret <= 0 || !running_) {
+            continue;
+        }
+
         struct sockaddr_in clientAddr;
         socklen_t clientAddrLen = sizeof(clientAddr);
         
         int clientSocket = accept(serverSocket_, (struct sockaddr*)&clientAddr, &clientAddrLen);
-        
         if (clientSocket < 0) {
-            if (running_) {
-                continue;
-            } else {
-                break;
-            }
+            continue;
         }
         
         // 异步并发处理客户端连接
@@ -240,7 +264,14 @@ void ProxyServer::handleClientConnection(int clientSocket) {
             std::string hostPort = request.substr(hostStart, hostEnd - hostStart);
             size_t colon = hostPort.find(':');
             std::string host = (colon != std::string::npos) ? hostPort.substr(0, colon) : hostPort;
-            uint16_t port = (colon != std::string::npos) ? static_cast<uint16_t>(std::stoi(hostPort.substr(colon + 1))) : 443;
+            uint16_t port = 443;
+            if (colon != std::string::npos) {
+                try {
+                    port = static_cast<uint16_t>(std::stoi(hostPort.substr(colon + 1)));
+                } catch (...) {
+                    port = 443;
+                }
+            }
 
             int remoteSocket = connectToRemote(host, port);
             if (remoteSocket >= 0) {
@@ -264,15 +295,21 @@ void ProxyServer::handleClientConnection(int clientSocket) {
             std::string targetHost;
             uint16_t targetPort = 0;
 
-            if (buffer[3] == 0x01) { // IPv4 地址
+            if (buffer[3] == 0x01 && reqLen >= 10) { // IPv4 地址 (1 + 1 + 1 + 1 + 4 + 2 = 10)
                 char ipStr[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &buffer[4], ipStr, sizeof(ipStr));
                 targetHost = ipStr;
-                targetPort = ntohs(*reinterpret_cast<uint16_t*>(&buffer[8]));
+                uint16_t netPort = 0;
+                std::memcpy(&netPort, &buffer[8], sizeof(netPort));
+                targetPort = ntohs(netPort);
             } else if (buffer[3] == 0x03) { // 域名
                 uint8_t domainLen = static_cast<uint8_t>(buffer[4]);
-                targetHost = std::string(&buffer[5], domainLen);
-                targetPort = ntohs(*reinterpret_cast<uint16_t*>(&buffer[5 + domainLen]));
+                if (reqLen >= static_cast<int>(5 + domainLen + 2)) {
+                    targetHost = std::string(&buffer[5], domainLen);
+                    uint16_t netPort = 0;
+                    std::memcpy(&netPort, &buffer[5 + domainLen], sizeof(netPort));
+                    targetPort = ntohs(netPort);
+                }
             }
 
             if (!targetHost.empty() && targetPort > 0) {
@@ -299,7 +336,14 @@ void ProxyServer::handleClientConnection(int clientSocket) {
                 std::string hostPort = request.substr(hostStart, hostEnd - hostStart);
                 size_t colon = hostPort.find(':');
                 std::string host = (colon != std::string::npos) ? hostPort.substr(0, colon) : hostPort;
-                uint16_t port = (colon != std::string::npos) ? static_cast<uint16_t>(std::stoi(hostPort.substr(colon + 1))) : 80;
+                uint16_t port = 80;
+                if (colon != std::string::npos) {
+                    try {
+                        port = static_cast<uint16_t>(std::stoi(hostPort.substr(colon + 1)));
+                    } catch (...) {
+                        port = 80;
+                    }
+                }
 
                 int remoteSocket = connectToRemote(host, port);
                 if (remoteSocket >= 0) {

@@ -89,6 +89,9 @@ emergency-proxy.exe --stop
 # 启动代理
 ./emergency-proxy --start [--port 8888] [--bind 127.0.0.1]
 
+# 指定应急/VPN 认证账号密码 (或通过环境变量 EMERGENCY_USER / EMERGENCY_PASS 传入)
+./emergency-proxy --start --username <username> --password <password>
+
 # 独立拉取并查看远端紧急端点列表 (通过 wsnet)
 ./emergency-proxy --fetch-endpoints
 

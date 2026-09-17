@@ -4,6 +4,8 @@
 #include "wsnet/WSNet.h"
 #include <iostream>
 #include <fstream>
+#include <thread>
+#include <chrono>
 
 #ifdef _WIN32
     #include <windows.h>
@@ -17,6 +19,8 @@
     #include <net/if.h>
     #include <arpa/inet.h>
     #include <netdb.h>
+    #include <sys/stat.h>
+    #include <sys/wait.h>
 #endif
 
 OpenVPNTunnel::OpenVPNTunnel() {}
@@ -43,21 +47,42 @@ bool OpenVPNTunnel::connect(const std::string &ip, uint16_t port, const std::str
         return false;
     }
     
-    connected_ = true;
-    if (statusCallback_) {
-        statusCallback_("Connected to " + ip + ":" + std::to_string(port));
+    // 轮询校验 OpenVPN 是否握手成功并分配到虚拟 IP（最多 8 秒）
+    ProcessManager pm;
+    for (int i = 0; i < 80; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        if (!pm.isProcessRunning(processPid_)) {
+            Logger::instance().warn("[VPN] OpenVPN process terminated prematurely for " + ip + ":" + std::to_string(port) +
+                                    ". (If AUTH_FAILED occurred, please specify valid credentials via -u/--username and -P/--password)");
+            stopOpenVPNProcess();
+            return false;
+        }
+
+        // 检查是否已分配到虚拟网卡和有效 IP
+        std::string currentIp = getTunnelIP();
+        if (!currentIp.empty()) {
+            connected_ = true;
+            if (statusCallback_) {
+                statusCallback_("Connected to " + ip + ":" + std::to_string(port) + " (Tunnel IP: " + currentIp + ")");
+            }
+            return true;
+        }
     }
-    
-    return true;
+
+    Logger::instance().warn("[VPN] Connection to " + ip + ":" + std::to_string(port) + " timed out without tunnel establishment.");
+    stopOpenVPNProcess();
+    return false;
 }
 
 bool OpenVPNTunnel::disconnect() {
+    if (processPid_ != -1) {
+        stopOpenVPNProcess();
+    }
+    
     if (!connected_) {
         return true;
     }
-    
-    stopOpenVPNProcess();
-    processPid_ = -1;
     connected_ = false;
 
 #ifdef _WIN32
@@ -100,7 +125,7 @@ std::string OpenVPNTunnel::getTunnelInterface() const {
             }
         }
     }
-    return "TAP-Windows Adapter";
+    return "";
 #else
     struct ifaddrs *ifaddr = nullptr;
     if (getifaddrs(&ifaddr) == 0) {
@@ -115,7 +140,7 @@ std::string OpenVPNTunnel::getTunnelInterface() const {
         }
         freeifaddrs(ifaddr);
     }
-    return "tun0";
+    return "";
 #endif
 }
 
@@ -145,7 +170,7 @@ std::string OpenVPNTunnel::getTunnelIP() const {
             }
         }
     }
-    return "10.8.0.1";
+    return "";
 #else
     struct ifaddrs *ifaddr = nullptr;
     if (getifaddrs(&ifaddr) == 0) {
@@ -164,7 +189,7 @@ std::string OpenVPNTunnel::getTunnelIP() const {
         }
         freeifaddrs(ifaddr);
     }
-    return "10.8.0.1";
+    return "";
 #endif
 }
 
@@ -196,6 +221,9 @@ std::string OpenVPNTunnel::generateTempConfigFile(const std::string &ip, uint16_
         out << wsnet::emergencyConnect()->ovpnConfig();
     }
     out << "\nremote " << ip << " " << port << " " << protocol << "\n";
+    out << "connect-retry-max 1\n";
+    out << "connect-timeout 8\n";
+    out << "server-poll-timeout 6\n";
     out.close();
     return tempPath;
 }
@@ -217,8 +245,12 @@ bool OpenVPNTunnel::startOpenVPNProcess(const std::string &configFile) {
     }
     auth.close();
 
+#ifndef _WIN32
+    chmod(authFile.c_str(), 0600);
+#endif
+
     ProcessManager pm;
-    return pm.startProcess("openvpn", {"--config", configFile, "--auth-user-pass", authFile}, processPid_);
+    return pm.startProcess("openvpn", {"--config", configFile, "--auth-user-pass", authFile, "--connect-retry-max", "1", "--connect-timeout", "8"}, processPid_);
 }
 
 bool OpenVPNTunnel::stopOpenVPNProcess() {
@@ -227,8 +259,18 @@ bool OpenVPNTunnel::stopOpenVPNProcess() {
     }
     
 #ifdef _WIN32
-    return TerminateProcess(OpenProcess(PROCESS_TERMINATE, FALSE, processPid_), 0);
+    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, processPid_);
+    if (hProcess) {
+        TerminateProcess(hProcess, 0);
+        CloseHandle(hProcess);
+    }
+    processPid_ = -1;
+    return true;
 #else
-    return kill(processPid_, SIGTERM) == 0;
+    kill(processPid_, SIGTERM);
+    int status = 0;
+    waitpid(processPid_, &status, WNOHANG);
+    processPid_ = -1;
+    return true;
 #endif
 }

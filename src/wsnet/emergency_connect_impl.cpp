@@ -29,7 +29,12 @@ auth-user-pass
 reneg-sec 432000
 resolv-retry infinite
 auth SHA512
-data-ciphers AES-256-GCM
+cipher AES-256-GCM
+data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+data-ciphers-fallback AES-256-GCM
+connect-retry-max 1
+connect-timeout 8
+server-poll-timeout 6
 verb 2
 mute-replay-warnings
 remote-cert-tls server
@@ -105,10 +110,8 @@ std::string EmergencyConnectImpl::password() const {
 
 std::vector<std::shared_ptr<WSNetEmergencyConnectEndpoint>> EmergencyConnectImpl::getHardcodedEndpoints() const {
     std::vector<std::shared_ptr<WSNetEmergencyConnectEndpoint>> list;
-    list.push_back(std::make_shared<EmergencyConnectEndpoint>("185.217.116.16", 443, Protocol::kTcp));
-    list.push_back(std::make_shared<EmergencyConnectEndpoint>("185.217.116.17", 1194, Protocol::kUdp));
-    list.push_back(std::make_shared<EmergencyConnectEndpoint>("185.217.116.18", 443, Protocol::kTcp));
     list.push_back(std::make_shared<EmergencyConnectEndpoint>("185.217.116.16", 1194, Protocol::kUdp));
+    list.push_back(std::make_shared<EmergencyConnectEndpoint>("185.217.116.17", 1194, Protocol::kUdp));
     list.push_back(std::make_shared<EmergencyConnectEndpoint>("185.217.116.18", 1194, Protocol::kUdp));
     return list;
 }
@@ -163,7 +166,6 @@ std::shared_ptr<WSNetCancelableCallback> EmergencyConnectImpl::getIpEndpoints(WS
             for (const auto &ip : resolvedIps) {
                 dynamicEndpoints.push_back(std::make_shared<EmergencyConnectEndpoint>(ip, 443, Protocol::kUdp));
                 dynamicEndpoints.push_back(std::make_shared<EmergencyConnectEndpoint>(ip, 443, Protocol::kTcp));
-                dynamicEndpoints.push_back(std::make_shared<EmergencyConnectEndpoint>(ip, 1194, Protocol::kUdp));
             }
         } else {
             Logger::instance().warn("[wsnet] DNS resolution for econnect.windscribe.com yielded no IPs or was blocked. Using fallback emergency endpoints.");
